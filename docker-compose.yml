@@ -1,0 +1,63 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_due_diligence
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    environment:
+      CHROMA_SERVER_HOST: 0.0.0.0
+    ports:
+      - "8002:8000"
+
+  backend:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ai_due_diligence
+      - CHROMA_SERVER=http://chroma:8000
+    depends_on:
+      - postgres
+      - chroma
+      - redis
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  rqworker:
+    image: python:3.11-slim
+    command: sh -c "pip install rq redis && rq worker --url redis://redis:6379/0"
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    depends_on:
+      - redis
+      - backend
+
+  frontend:
+    build: ./frontend
+    volumes:
+      - ./frontend:/usr/src/app
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
